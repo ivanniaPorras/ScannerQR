@@ -4,221 +4,293 @@ import { Alert, Button, FlatList, Modal, Pressable, StyleSheet, Text, TextInput,
 import { cargarProductos, guardarProductos, type Producto } from '../utils/storage';
 
 export default function ProductItem() {
-  // Permisos de cámara
+  // Permisos
   const [permiso, solicitarPermiso] = useCameraPermissions();
 
-  // Estado general
-  const [escanneado, setEscanneado] = useState<boolean>(false);
+  // Estado
   const [productos, setProductos] = useState<Producto[]>([]);
-  const [nombre, setNombre] = useState<string>('');
-  const [cantidad, setCantidad] = useState<string>('');
-  const [datosEscaneados, setDatosEscaneados] = useState<string>('');
-  const [modalVisible, setModalVisible] = useState<boolean>(false);
-  const [idProductoEditando, setIdProductoEditando] = useState<string | null>(null);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null); // ID seleccionado/escaneado
+  const [nombre, setNombre] = useState('');
+  const [cantidad, setCantidad] = useState('');
 
-  // Cargar inventario al inicio
-  useEffect(() => {
-    (async () => {
-      const data = await cargarProductos();
-      setProductos(Array.isArray(data) ? data : []);
-    })();
-  }, []);
+  // Cargar persistencia
+  useEffect(() => { (async () => setProductos(await cargarProductos()))(); }, []);
 
-  // Escaneo de código
-  const handleBarcodeScanned = (result: BarcodeScanningResult) => {
-    if (escanneado) return;
-    setEscanneado(true);
-    setDatosEscaneados(result.data);
+  // Escaneo: enfoca el producto (si existe, precarga datos)
+  const handleScan = (r: BarcodeScanningResult) => {
+    const id = r.data.trim();
+    setEditingId(id);
+
+    const p = productos.find(x => x.id === id);
+    setNombre(p?.nombre ?? '');
+    setCantidad(p ? String(p.cantidad) : '');
+
     setModalVisible(true);
   };
 
-  // Agregar/Actualizar
-  const handleAddOrUpdate = async () => {
-    if (!nombre.trim() || !cantidad.trim() || !datosEscaneados.trim()) {
-      Alert.alert('Error', 'Debe completar todos los campos.');
+  // Guardar: crea o actualiza y mantiene foco en el producto
+  const handleSave = async () => {
+    if (!editingId || !nombre.trim() || !cantidad.trim()) {
+      Alert.alert('Error', 'Completa nombre y cantidad.');
+      return;
+    } // Validar cantidad
+    const cant = parseInt(cantidad, 10);
+    if (!Number.isFinite(cant) || cant < 0) {
+      Alert.alert('Error', 'Cantidad inválida.');
       return;
     }
-
-    const cantidadNum = parseInt(cantidad, 10);
-    if (Number.isNaN(cantidadNum) || cantidadNum < 0) {
-      Alert.alert('Error', 'La cantidad debe ser un número válido.');
-      return;
-    }
-
-    let nuevos: Producto[];
-
-    if (idProductoEditando) {
-      // Editar por id existente
-      nuevos = productos.map((p) =>
-        p.id === idProductoEditando ? { ...p, nombre, cantidad: cantidadNum } : p
-      );
-    } else {
-      // Si ya existe el ID, actualizamos; si no, creamos
-      const existente = productos.find((p) => p.id === datosEscaneados);
-      if (existente) {
-        nuevos = productos.map((p) =>
-          p.id === datosEscaneados ? { ...p, nombre, cantidad: cantidadNum } : p
-        );
-      } else {
-        nuevos = [
-          ...productos,
-          { id: datosEscaneados, nombre, cantidad: cantidadNum, fecha: new Date().toISOString() },
-        ];
-      }
-    }
+// Actualizar o crear
+    const existe = productos.some(p => p.id === editingId);
+    const nuevos = existe
+      ? productos.map(p => (p.id === editingId ? { ...p, nombre: nombre.trim(), cantidad: cant } : p))
+      : [...productos, { id: editingId, nombre: nombre.trim(), cantidad: cant, fecha: new Date().toISOString() }]; 
 
     setProductos(nuevos);
     await guardarProductos(nuevos);
 
-    // Reset
+    setModalVisible(false);
     setNombre('');
     setCantidad('');
-    setEscanneado(false);
-    setDatosEscaneados('');
-    setModalVisible(false);
-    setIdProductoEditando(null);
+    // OJO: NO limpiamos editingId para que la tarjeta superior siga mostrándose
+  };
+
+  // Editar desde la lista
+  const handleEdit = (id: string) => {
+    const p = productos.find(x => x.id === id);
+    if (!p) return;
+    setEditingId(id);
+    setNombre(p.nombre);
+    setCantidad(String(p.cantidad));
+    setModalVisible(true);
   };
 
   // Eliminar
   const handleDelete = async (id: string) => {
-    const nuevos = productos.filter((p) => p.id !== id);
+    const nuevos = productos.filter(p => p.id !== id);
     setProductos(nuevos);
     await guardarProductos(nuevos);
+    if (editingId === id) setEditingId(null); // si borraste el actual, oculta tarjeta
   };
 
-  // Editar
-  const handleEdit = (id: string) => {
-    const p = productos.find((x) => x.id === id);
-    if (!p) return;
-    setNombre(p.nombre);
-    setCantidad(String(p.cantidad));
-    setIdProductoEditando(id);
-    setModalVisible(true);
-  };
-
-  // Permisos cámara
+  // Permisos camara
   if (!permiso) return <View />;
   if (!permiso.granted) {
     return (
-      <View style={estilos.centrado}>
-        <Text style={estilos.mensaje}>Necesitamos tu permiso para la cámara</Text>
-        <Button onPress={solicitarPermiso} title="Conceder Permiso" />
+      <View style={s.center}>
+        <Text style={s.msg}>Necesitamos tu permiso para la cámara</Text>
+        <Button title="Conceder Permiso" onPress={solicitarPermiso} />
       </View>
     );
   }
 
+  // Producto actual 
+  const actual = editingId ? productos.find(p => p.id === editingId) ?? null : null;
+
+// Lista sin el actual
+  const dataLista = editingId ? productos.filter(p => p.id !== editingId) : productos;
+
   return (
-    <View style={estilos.contenedor}>
-      <Text style={estilos.titulo}>Escanea un código de barras</Text>
+    <View style={s.screen}>
+      <Text style={s.title}>Inventario — Escanea un código de barras</Text>
 
       <CameraView
-        style={estilos.camara}
-        // algunos tipos de TS de expo-camera son estrictos; este cast evita warnings
+        style={s.camera}
         barcodeScannerSettings={{ barcodeTypes: ['qr', 'ean13', 'ean8'] as any }}
-        onBarcodeScanned={handleBarcodeScanned}
+        onBarcodeScanned={handleScan}
       />
 
-      {/* Modal de creación/edición */}
-      <Modal
-        animationType="slide"
-        transparent
-        visible={modalVisible}
-        onRequestClose={() => {
-          setModalVisible(false);
-          setEscanneado(false);
-          setIdProductoEditando(null);
-        }}
-      >
-        <View style={estilos.contenedorModal}>
-          <View style={estilos.contenidoModal}>
-            <Text style={estilos.textoModal}>
-              {idProductoEditando ? 'Editar Producto' : 'Producto escaneado:'} {datosEscaneados}
-            </Text>
-
-            <TextInput
-              placeholder="Nombre del producto"
-              value={nombre}
-              onChangeText={setNombre}
-              style={estilos.input}
-            />
-            <TextInput
-              placeholder="Cantidad"
-              value={cantidad}
-              onChangeText={setCantidad}
-              keyboardType="numeric"
-              style={estilos.input}
-            />
-
-            <Button
-              title={idProductoEditando ? 'Actualizar Producto' : 'Agregar Producto'}
-              onPress={handleAddOrUpdate}
-            />
-            <View style={{ height: 8 }} />
-            <Button
-              title="Cancelar"
-              onPress={() => {
-                setModalVisible(false);
-                setEscanneado(false);
-                setIdProductoEditando(null);
-              }}
-            />
+      {/* Tarjeta del producto actual */}
+      {actual && (
+        <View style={s.card}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.cardName}>{actual.nombre || 'Sin nombre'}</Text>
+            <Text style={s.cardText}>Cantidad: {actual.cantidad ?? 0}</Text>
+            <Text style={s.cardId}>ID: {actual.id}</Text>
+          </View>
+          <View style={s.actions}>
+            <Pressable onPress={() => handleEdit(actual.id)}>
+              <Text style={s.btnEdit}>Editar</Text>
+            </Pressable>
+            <Pressable onPress={() => handleDelete(actual.id)}>
+              <Text style={s.btnDelete}>Eliminar</Text>
+            </Pressable>
           </View>
         </View>
-      </Modal>
+      )}
 
-      {/* Lista de productos */}
+      {/* Lista (sin el seleccionado) */}
       <FlatList
-        contentContainerStyle={{ paddingVertical: 8 }}
-        data={productos}
+        data={dataLista}
         keyExtractor={(item) => item.id}
+        extraData={[productos, editingId]}
+        contentContainerStyle={{ paddingVertical: 8 }}
         renderItem={({ item }) => (
-          <View style={estilos.item}>
+          <View style={s.item}>
             <View style={{ flex: 1 }}>
-              <Text style={estilos.nombre}>{item.nombre}</Text>
-              <Text style={estilos.detalle}>Cantidad: {item.cantidad}</Text>
-              <Text style={estilos.detalleMini}>ID: {item.id}</Text>
+              <Text style={s.itemName}>{item.nombre || 'Sin nombre'}</Text>
+              <Text style={s.itemText}>Cantidad: {item.cantidad ?? 0}</Text>
+              <Text style={s.itemId}>ID: {item.id}</Text>
             </View>
-            <View style={estilos.acciones}>
+            <View style={s.actions}>
               <Pressable onPress={() => handleEdit(item.id)}>
-                <Text style={estilos.btnEditar}>Editar</Text>
+                <Text style={s.btnEdit}>Editar</Text>
               </Pressable>
               <Pressable onPress={() => handleDelete(item.id)}>
-                <Text style={estilos.btnEliminar}>Eliminar</Text>
+                <Text style={s.btnDelete}>Eliminar</Text>
               </Pressable>
             </View>
           </View>
         )}
-        ListEmptyComponent={<Text style={{ marginTop: 12 }}>No hay productos aún.</Text>}
+        ListEmptyComponent={<Text style={s.empty}>No hay productos aún.</Text>}
       />
+
+      {/* Modal crear/editar */}
+      <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
+        <View style={s.modalWrap}>
+          <View style={s.modal}>
+            <Text style={s.modalTitle}>Producto</Text>
+            <Text style={s.modalHint}>ID: {editingId ?? '—'}</Text>
+
+            <TextInput
+              placeholder="Nombre"
+              placeholderTextColor="#9aa4b2"
+              value={nombre}
+              onChangeText={setNombre}
+              style={s.input}
+            />
+            <TextInput
+              placeholder="Cantidad"
+              placeholderTextColor="#9aa4b2"
+              value={cantidad}
+              onChangeText={setCantidad}
+              keyboardType="numeric"
+              style={s.input}
+            />
+
+            <Button title="Guardar" onPress={handleSave} />
+            <View style={{ height: 8 }} />
+            <Button title="Cancelar" onPress={() => setModalVisible(false)} />
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
+// Paleta basica de colores
+const color = {
+  bg: '#0B1020',
+  panel: '#1E293B',
+  border: '#334155',
+  text: '#F8FAFC',
+  sub: '#94A3B8',
+  link: '#3B82F6',
+  danger: '#EF4444',
+};
 
-const estilos = StyleSheet.create({
-  contenedor: { flex: 1, alignItems: 'center', padding: 16, backgroundColor: '#fff' },
-  centrado: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 16, backgroundColor: '#fff' },
-  titulo: { fontSize: 18, marginBottom: 8, fontWeight: '600' },
-  camara: { width: '100%', height: 300, borderRadius: 8, overflow: 'hidden' },
-  mensaje: { textAlign: 'center', paddingBottom: 10 },
-  contenedorModal: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' },
-  contenidoModal: { backgroundColor: '#fff', padding: 20, width: '85%', borderRadius: 12 },
-  textoModal: { fontSize: 16, marginBottom: 10, fontWeight: '600' },
-  input: { height: 44, borderColor: '#ccc', borderWidth: 1, marginVertical: 8, paddingHorizontal: 10, borderRadius: 8 },
-  item: {
+// Estilos simples y ordenados
+const s = StyleSheet.create({
+  // Layout base
+  screen: { flex: 1, backgroundColor: color.bg, alignItems: 'center', padding: 16 },
+  center: { flex: 1, backgroundColor: color.bg, alignItems: 'center', justifyContent: 'center' },
+
+  // Texto
+  title: { width: '100%', maxWidth: 760, color: color.text, fontSize: 20, fontWeight: '700', marginBottom: 12 },
+  msg: { color: color.sub, fontSize: 14, marginBottom: 8 },
+
+  // Camara
+  camera: {
     width: '100%',
-    maxWidth: 650,
+    maxWidth: 760,
+    height: 240,
+    borderRadius: 8,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: color.link,
+    marginBottom: 12,
+  },
+
+  // tarjeta del producto actual
+  card: {
+    width: '100%',
+    maxWidth: 760,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-    gap: 10,
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: color.panel,
+    borderWidth: 1,
+    borderColor: color.border,
+    marginBottom: 12,
   },
-  nombre: { fontSize: 16, fontWeight: '600' },
-  detalle: { fontSize: 14, color: '#444' },
-  detalleMini: { fontSize: 12, color: '#777', marginTop: 2 },
-  acciones: { flexDirection: 'row', gap: 16, paddingLeft: 8 },
-  btnEditar: { color: '#1e40af', fontSize: 14, fontWeight: '600' },
-  btnEliminar: { color: 'crimson', fontSize: 14, fontWeight: '600' },
-});
+  cardName: { color: color.text, fontSize: 16, fontWeight: '700' },
+  cardText: { color: color.sub, fontSize: 14, marginTop: 2 },
+  cardId: { color: '#CBD5E1', fontSize: 12, marginTop: 4 },
+
+  // items de la lista
+  item: {
+    width: '100%',
+    maxWidth: 760,
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: color.panel,
+    borderWidth: 1,
+    borderColor: color.border,
+    marginBottom: 10,
+  },
+  itemName: { color: color.text, fontSize: 16, fontWeight: '700' },
+  itemText: { color: color.sub, fontSize: 14, marginTop: 2 },
+  itemId: { color: '#CBD5E1', fontSize: 12, marginTop: 4 },
+
+  // Acciones
+  actions: { flexDirection: 'row', gap: 12, paddingLeft: 8 },
+  btnEdit: {
+    color: color.link,
+    borderColor: color.link,
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    overflow: 'hidden',
+  },
+  btnDelete: {
+    color: color.danger,
+    borderColor: color.danger,
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    overflow: 'hidden',
+  },
+
+  // Modal
+  modalWrap: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', padding: 16 },
+  modal: {
+    width: '90%',
+    maxWidth: 560,
+    backgroundColor: color.panel,
+    borderColor: color.border,
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 16,
+  },
+  modalTitle: { color: color.text, fontSize: 18, fontWeight: '700', marginBottom: 4 },
+  modalHint: { color: color.sub, fontSize: 12, marginBottom: 10 },
+
+  // Inputs
+  input: {
+    height: 44,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: color.border,
+    color: color.text,
+    paddingHorizontal: 10,
+    marginVertical: 6,
+    backgroundColor: 'transparent',
+  },
+
+  // Lista vacía
+  empty: { color: '#9CA3AF', textAlign: 'center', marginTop: 12, fontSize: 14 },
+}); 

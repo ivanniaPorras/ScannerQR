@@ -1,28 +1,36 @@
+// utils/storage.ts
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type Producto = {
-  id: string;       // código escaneado
+  id: string;
   nombre: string;
   cantidad: number;
-  fecha?: string;   // ISO
+  fecha?: string; // ISO
 };
 
-const KEY = 'productos';
-
-export const cargarProductos = async (): Promise<Producto[]> => {
+const KEY = '@productos_v1';
+// Cargar lista de productos
+export async function cargarProductos(): Promise<Producto[]> {
   try {
     const raw = await AsyncStorage.getItem(KEY);
-    return raw ? (JSON.parse(raw) as Producto[]) : [];
-  } catch (e) {
-    console.log('Error al cargar productos:', e);
+    if (!raw) return [];
+    const arr: Producto[] = JSON.parse(raw);
+    // Validar estructura básica
+    if (!Array.isArray(arr)) return [];
+    return arr.filter(p => p && typeof p.id === 'string');
+  } catch {
     return [];
   }
-};
-
-export const guardarProductos = async (productos: Producto[]): Promise<void> => {
+}
+// Guardar lista de productos
+export async function guardarProductos(productos: Producto[]): Promise<void> {
   try {
     await AsyncStorage.setItem(KEY, JSON.stringify(productos));
-  } catch (e) {
-    console.log('Error al guardar productos:', e);
+  } catch {
+    // opcional: puedes mostrar un Alert desde el componente si deseas
   }
-};
+}
+
+export async function limpiarProductos(): Promise<void> {
+  try { await AsyncStorage.removeItem(KEY); } catch {}
+}
