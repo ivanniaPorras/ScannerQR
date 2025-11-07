@@ -1,100 +1,98 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import React, { useEffect, useState } from 'react';
-import { Alert, Button, FlatList, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Button, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import ProductItem from '../components/ProductItem';
+import type { Producto } from '../utils/storage';
+import { cargarProductos, guardarProductos } from '../utils/storage';
 
 export default function App() {
-  const [permiso, solicitarPermiso] = useCameraPermissions(); // Solicitar permisos de la camara
-  const [escanneado, setEscanneado] = useState(false);
-  const [productos, setProductos] = useState<any[]>([]);
-  const [nombre, setNombre] = useState(''); 
-  const [cantidad, setCantidad] = useState(''); 
-  const [datosEscaneados, setDatosEscaneados] = useState<string>(''); // Datos escaneados del código de barras
+  const [permiso, solicitarPermiso] = useCameraPermissions();
+  const [escaneado, setEscaneado] = useState(false);
+  const [productos, setProductos] = useState<Producto[]>([]);
+  const [nombre, setNombre] = useState('');
+  const [cantidad, setCantidad] = useState('');
+  const [datosEscaneados, setDatosEscaneados] = useState<string>(''); // ID
   const [modalVisible, setModalVisible] = useState(false);
   const [idProductoEditando, setIdProductoEditando] = useState<string | null>(null);
 
   useEffect(() => {
-    // Cargar los productos de AsyncStorage al iniciar
-    const cargarProductos = async () => {
-      try {
-        const productosGuardados = await AsyncStorage.getItem('productos');
-        if (productosGuardados) {
-          setProductos(JSON.parse(productosGuardados));
-        }
-      } catch (error) {
-        console.log('Error al cargar productos de AsyncStorage', error);
-      }
-    };
-    cargarProductos();
+    (async () => {
+      const lista = await cargarProductos();
+      setProductos(lista);
+    })();
   }, []);
 
-  const handleBarcodeScanned = ({ type, data }: any) => {
-    if (!escanneado) {
-      setEscanneado(true);
-      setDatosEscaneados(data); // Guardar los datos del código escaneado
-      setModalVisible(true); // Mostrar el modal cuando se escanea un código
-    }
+  // Evita reescaneos mientras el modal está abierto
+  const handleBarcodeScanned = ({ data }: { data: string }) => {
+    if (escaneado || modalVisible) return;
+    setEscaneado(true);
+    setDatosEscaneados(String(data).trim());
+    setModalVisible(true);
   };
-
-  const handleAddProduct = () => {
-    if (!nombre || !cantidad || !datosEscaneados) {
+// Agrega o actualiza el producto
+  const handleAddOrUpdate = async () => {
+    if (!nombre.trim() || !cantidad.trim() || !datosEscaneados.trim()) {
       Alert.alert('Error', 'Debe completar todos los campos.');
       return;
     }
+    const cant = parseInt(cantidad, 10);
+    if (!Number.isFinite(cant) || cant < 0) {
+      Alert.alert('Error', 'Cantidad inválida.');
+      return;
+    }
 
-    const nuevoProducto = {
-      id: datosEscaneados, // el código escaneado es el ID único
-      nombre,
-      cantidad: parseInt(cantidad),
+    const nuevo: Producto = {
+      id: datosEscaneados.trim(),
+      nombre: nombre.trim(),
+      cantidad: cant,
       fecha: new Date().toISOString(),
     };
 
-    // Editar un producto existente
+    let actualizados: Producto[];
+
     if (idProductoEditando) {
-      const productosActualizados = productos.map((producto) =>
-        producto.id === idProductoEditando
-          ? { ...producto, nombre, cantidad: parseInt(cantidad) } // Actualiza el producto
-          : producto
+      // Editar por idProductoEditando
+      actualizados = productos.map(p =>
+        p.id === idProductoEditando ? { ...p, nombre: nuevo.nombre, cantidad: nuevo.cantidad } : p
       );
-      setProductos(productosActualizados);
-      AsyncStorage.setItem('productos', JSON.stringify(productosActualizados)); // Guarda en AsyncStorage
     } else {
-      // Si no estamos editando, agregamos un nuevo producto
-      const productosActualizados = [...productos, nuevoProducto];
-      setProductos(productosActualizados);
-      AsyncStorage.setItem('productos', JSON.stringify(productosActualizados)); // Guarda en AsyncStorage
+      // Crear o actualizar si el ID ya existía (por si escaneaste el mismo código)
+      const existe = productos.some(p => p.id === nuevo.id);
+      actualizados = existe
+        ? productos.map(p => (p.id === nuevo.id ? { ...p, nombre: nuevo.nombre, cantidad: nuevo.cantidad } : p))
+        : [...productos, nuevo];
     }
 
-    // Restablecer los campos
+    setProductos(actualizados);
+    await guardarProductos(actualizados);
+
+    // Reset
     setNombre('');
     setCantidad('');
-    setEscanneado(false); 
     setDatosEscaneados('');
-    setModalVisible(false); // Cerrar el modal después de agregar o editar el producto
-    setIdProductoEditando(null); // Restablecer el ID de producto editado
+    setIdProductoEditando(null);
+    setModalVisible(false);
+    setEscaneado(false);
   };
 
-  const handleDeleteProduct = (id: string) => {
-    const productosActualizados = productos.filter(producto => producto.id !== id);
-    setProductos(productosActualizados);
-    AsyncStorage.setItem('productos', JSON.stringify(productosActualizados)); // Guardar los cambios
+  const handleDelete = async (id: string) => {
+    const actualizados = productos.filter(p => p.id !== id);
+    setProductos(actualizados);
+    await guardarProductos(actualizados);
   };
 
-  const handleEditProduct = (id: string) => {
-    const productoAEditar = productos.find(producto => producto.id === id);
-    if (productoAEditar) {
-      setNombre(productoAEditar.nombre);
-      setCantidad(productoAEditar.cantidad.toString());
-      setIdProductoEditando(id); // Establecer el ID del producto que estamos editando
-      setModalVisible(true); // Mostrar el modal para editar
-    }
+  const handleEdit = (id: string) => {
+    const p = productos.find(x => x.id === id);
+    if (!p) return;
+    setNombre(p.nombre);
+    setCantidad(String(p.cantidad));
+    setDatosEscaneados(p.id);     // mantiene visible el ID
+    setIdProductoEditando(id);
+    setModalVisible(true);
   };
 
-  // permisos de la camara
-  if (!permiso) {
-    return <View />;
-  }
-
+  // permisos de la cámara
+  if (!permiso) return <View />;
   if (!permiso.granted) {
     return (
       <View style={estilos.contenedor}>
@@ -106,120 +104,82 @@ export default function App() {
 
   return (
     <View style={estilos.contenedor}>
-      <Text>Escanea un código de barras</Text>
+      <Text style={{ marginBottom: 8, fontWeight: '700' }}>Escanea un código de barras</Text>
 
-      {/* Vista de la cámara */}
       <CameraView
         style={estilos.camara}
-        barcodeScannerSettings={{
-          barcodeTypes: ['qr', 'ean13', 'ean8'],
-        }}
-        onBarcodeScanned={handleBarcodeScanned}  // Detecta el escaneo
+        barcodeScannerSettings={{ barcodeTypes: ['qr', 'ean13', 'ean8'] as any }}
+        onBarcodeScanned={handleBarcodeScanned}
       />
 
-      {/* Modal para poner los detalles del producto escaneado */}
-      <Modal
-        animationType="slide"
-        transparent={true}
+      {/* Modal reutilizable */}
+      <ProductItem
         visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <View style={estilos.contenedorModal}>
-          <View style={estilos.contenidoModal}>
-            <Text style={estilos.textoModal}>{idProductoEditando ? 'Editar Producto' : 'Producto escaneado: '}{datosEscaneados}</Text>
-            <TextInput
-              placeholder="Nombre del producto"
-              value={nombre}
-              onChangeText={setNombre}
-              style={estilos.input}
-            />
-            <TextInput
-              placeholder="Cantidad"
-              value={cantidad}
-              onChangeText={setCantidad}
-              keyboardType="numeric"
-              style={estilos.input}
-            />
-            <Button title={idProductoEditando ? "Actualizar Producto" : "Agregar Producto"} onPress={handleAddProduct} />
-            <Button title="Cancelar" onPress={() => { 
-              setModalVisible(false); 
-              setEscanneado(false); // Resetear el estado de escaneo para permitir un nuevo escaneo
-              setIdProductoEditando(null); // Resetear el ID del producto editado
-            }} />
-          </View>
-        </View>
-      </Modal>
+        isEditing={Boolean(idProductoEditando)}
+        codigo={datosEscaneados}
+        nombre={nombre}
+        cantidad={cantidad}
+        onChangeNombre={setNombre}
+        onChangeCantidad={setCantidad}
+        onConfirm={handleAddOrUpdate}
+        onCancel={() => {
+          setModalVisible(false);
+          setEscaneado(false);
+          setIdProductoEditando(null);
+          setNombre('');
+          setCantidad('');
+          setDatosEscaneados('');
+        }}
+      />
 
       {/* Lista de productos guardados */}
       <FlatList
-        data={productos}
+        style={{ width: '100%', marginTop: 10 }}
+        contentContainerStyle={{ alignItems: 'center', paddingBottom: 20 }}
+        data={[...productos].sort((a, b) => Date.parse(b.fecha ?? '') - Date.parse(a.fecha ?? ''))}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <View style={estilos.itemProducto}>
-            <Text>{item.nombre} - {item.cantidad}</Text>
-            <TouchableOpacity onPress={() => handleEditProduct(item.id)}>
-              <Text style={estilos.editarEliminar}>Editar</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => handleDeleteProduct(item.id)}>
-              <Text style={estilos.editarEliminar}>Eliminar</Text>
-            </TouchableOpacity>
+          <View style={estilos.card}>
+            <View style={{ flex: 1 }}>
+              <Text style={estilos.cardNombre}>{item.nombre || 'Sin nombre'}</Text>
+              <Text style={estilos.cardSub}>Cantidad: {item.cantidad ?? 0}</Text>
+              <Text style={estilos.cardId}>ID: {item.id}</Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <TouchableOpacity onPress={() => handleEdit(item.id)}>
+                <Text style={estilos.btnEditar}>Editar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => handleDelete(item.id)}>
+                <Text style={estilos.btnEliminar}>Eliminar</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
+        ListEmptyComponent={<Text>No hay productos aún.</Text>}
       />
     </View>
   );
 }
 
 const estilos = StyleSheet.create({
-  contenedor: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#fff',
-  },
-  camara: {
-    width: '100%',
-    height: 300,
-  },
-  input: {
-    height: 40,
-    borderColor: 'gray',
-    borderWidth: 1,
-    marginVertical: 10,
-    paddingLeft: 8,
-    width: '80%',
-  },
-  mensaje: {
-    textAlign: 'center',
-    paddingBottom: 10,
-  },
-  itemProducto: {
+  contenedor: { flex: 1, alignItems: 'center', padding: 16, backgroundColor: '#fff' },
+  mensaje: { textAlign: 'center', paddingBottom: 10 },
+  camara: { width: '100%', height: 260, borderRadius: 8, overflow: 'hidden', borderWidth: 1, borderColor: '#3B82F6' },
+
+  card: {
+    width: '92%',
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '80%',
-    padding: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#ddd',
-  },
-  editarEliminar: {
-    color: 'blue',
-    fontSize: 16,
-  },
-  contenedorModal: {
-    flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  contenidoModal: {
-    backgroundColor: 'white',
-    padding: 20,
-    width: '80%',
-    borderRadius: 10,
-  },
-  textoModal: {
-    fontSize: 18,
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: '#111827',
+    borderWidth: 1,
+    borderColor: '#374151',
     marginBottom: 10,
   },
+  cardNombre: { color: '#F8FAFC', fontSize: 16, fontWeight: '700' },
+  cardSub: { color: '#9CA3AF', fontSize: 14, marginTop: 2 },
+  cardId: { color: '#CBD5E1', fontSize: 12, marginTop: 4 },
+  btnEditar: { color: '#3B82F6', borderColor: '#3B82F6', borderWidth: 1, borderRadius: 6, paddingVertical: 6, paddingHorizontal: 10 },
+  btnEliminar: { color: '#EF4444', borderColor: '#EF4444', borderWidth: 1, borderRadius: 6, paddingVertical: 6, paddingHorizontal: 10 },
 });
