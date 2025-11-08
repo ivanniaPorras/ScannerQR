@@ -1,7 +1,7 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import React, { useEffect, useState } from 'react';
-import { Alert, Button, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import ProductItem from '../components/ProductItem';
+import { Alert, Button, FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import ProductItem, { filtrarProductos } from '../components/ProductItem';
 import type { Producto } from '../utils/storage';
 import { cargarProductos, guardarProductos } from '../utils/storage';
 
@@ -11,9 +11,10 @@ export default function App() {
   const [productos, setProductos] = useState<Producto[]>([]);
   const [nombre, setNombre] = useState('');
   const [cantidad, setCantidad] = useState('');
-  const [datosEscaneados, setDatosEscaneados] = useState<string>(''); // ID
+  const [datosEscaneados, setDatosEscaneados] = useState<string>('');
   const [modalVisible, setModalVisible] = useState(false);
   const [idProductoEditando, setIdProductoEditando] = useState<string | null>(null);
+  const [busqueda, setBusqueda] = useState(''); 
 
   useEffect(() => {
     (async () => {
@@ -22,14 +23,13 @@ export default function App() {
     })();
   }, []);
 
-  // Evita reescaneos mientras el modal está abierto
   const handleBarcodeScanned = ({ data }: { data: string }) => {
     if (escaneado || modalVisible) return;
     setEscaneado(true);
     setDatosEscaneados(String(data).trim());
     setModalVisible(true);
   };
-// Agrega o actualiza el producto
+
   const handleAddOrUpdate = async () => {
     if (!nombre.trim() || !cantidad.trim() || !datosEscaneados.trim()) {
       Alert.alert('Error', 'Debe completar todos los campos.');
@@ -49,14 +49,11 @@ export default function App() {
     };
 
     let actualizados: Producto[];
-
     if (idProductoEditando) {
-      // Editar por idProductoEditando
       actualizados = productos.map(p =>
         p.id === idProductoEditando ? { ...p, nombre: nuevo.nombre, cantidad: nuevo.cantidad } : p
       );
     } else {
-      // Crear o actualizar si el ID ya existía (por si escaneaste el mismo código)
       const existe = productos.some(p => p.id === nuevo.id);
       actualizados = existe
         ? productos.map(p => (p.id === nuevo.id ? { ...p, nombre: nuevo.nombre, cantidad: nuevo.cantidad } : p))
@@ -66,7 +63,6 @@ export default function App() {
     setProductos(actualizados);
     await guardarProductos(actualizados);
 
-    // Reset
     setNombre('');
     setCantidad('');
     setDatosEscaneados('');
@@ -86,12 +82,11 @@ export default function App() {
     if (!p) return;
     setNombre(p.nombre);
     setCantidad(String(p.cantidad));
-    setDatosEscaneados(p.id);     // mantiene visible el ID
+    setDatosEscaneados(p.id);
     setIdProductoEditando(id);
     setModalVisible(true);
   };
 
-  // permisos de la cámara
   if (!permiso) return <View />;
   if (!permiso.granted) {
     return (
@@ -102,9 +97,15 @@ export default function App() {
     );
   }
 
+  // Filtrar y ordenar productos
+  const listaFiltrada = filtrarProductos(productos, busqueda)
+    .sort((a, b) => Date.parse(b.fecha ?? '') - Date.parse(a.fecha ?? ''));
+
   return (
     <View style={estilos.contenedor}>
-      <Text style={{ marginBottom: 8, fontWeight: '700' }}>Escanea un código de barras</Text>
+      <Text style={{ marginBottom: 8, fontWeight: '700', color: '#E5E7EB' }}>
+        Escanea un código de barras
+      </Text>
 
       <CameraView
         style={estilos.camara}
@@ -112,7 +113,15 @@ export default function App() {
         onBarcodeScanned={handleBarcodeScanned}
       />
 
-      {/* Modal reutilizable */}
+      {/* Buscador de productos */}
+      <TextInput
+        placeholder="Buscar por nombre o ID..."
+        placeholderTextColor="#6B7280"
+        value={busqueda}
+        onChangeText={setBusqueda}
+        style={estilos.buscador}
+      />
+
       <ProductItem
         visible={modalVisible}
         isEditing={Boolean(idProductoEditando)}
@@ -132,11 +141,10 @@ export default function App() {
         }}
       />
 
-      {/* Lista de productos guardados */}
       <FlatList
         style={{ width: '100%', marginTop: 10 }}
         contentContainerStyle={{ alignItems: 'center', paddingBottom: 20 }}
-        data={[...productos].sort((a, b) => Date.parse(b.fecha ?? '') - Date.parse(a.fecha ?? ''))}
+        data={listaFiltrada}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <View style={estilos.card}>
@@ -155,23 +163,41 @@ export default function App() {
             </View>
           </View>
         )}
-        ListEmptyComponent={<Text>No hay productos aún.</Text>}
+        ListEmptyComponent={<Text style={{ color: '#9CA3AF' }}>No hay productos aún.</Text>}
       />
     </View>
   );
 }
 
 const estilos = StyleSheet.create({
-  contenedor: { flex: 1, alignItems: 'center', padding: 16, backgroundColor: '#fff' },
-  mensaje: { textAlign: 'center', paddingBottom: 10 },
-  camara: { width: '100%', height: 260, borderRadius: 8, overflow: 'hidden', borderWidth: 1, borderColor: '#3B82F6' },
-
+  contenedor: { flex: 1, alignItems: 'center', padding: 16, backgroundColor: '#0B1220' },
+  mensaje: { textAlign: 'center', paddingBottom: 10, color: '#E5E7EB' },
+  camara: {
+    width: '100%',
+    height: 260,
+    borderRadius: 10,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: '#3B82F6',
+    backgroundColor: '#0F172A',
+  },
+  buscador: {
+    width: '100%',
+    height: 46,
+    marginTop: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    backgroundColor: '#0F172A',
+    color: '#E5E7EB',
+  },
   card: {
     width: '92%',
     flexDirection: 'row',
     alignItems: 'center',
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 10,
     backgroundColor: '#111827',
     borderWidth: 1,
     borderColor: '#374151',
@@ -180,6 +206,20 @@ const estilos = StyleSheet.create({
   cardNombre: { color: '#F8FAFC', fontSize: 16, fontWeight: '700' },
   cardSub: { color: '#9CA3AF', fontSize: 14, marginTop: 2 },
   cardId: { color: '#CBD5E1', fontSize: 12, marginTop: 4 },
-  btnEditar: { color: '#3B82F6', borderColor: '#3B82F6', borderWidth: 1, borderRadius: 6, paddingVertical: 6, paddingHorizontal: 10 },
-  btnEliminar: { color: '#EF4444', borderColor: '#EF4444', borderWidth: 1, borderRadius: 6, paddingVertical: 6, paddingHorizontal: 10 },
+  btnEditar: {
+    color: '#3B82F6',
+    borderColor: '#3B82F6',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  btnEliminar: {
+    color: '#EF4444',
+    borderColor: '#EF4444',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
 });
