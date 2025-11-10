@@ -1,16 +1,31 @@
 import React from 'react';
 import { Button, Modal, StyleSheet, Text, TextInput, View } from 'react-native';
+import type { Producto } from '../utils/storage';
 
+// Funcion para filtrar productos (cantidad, nombre o id)
+export const filtrarProductos = (lista: Producto[], query: string): Producto[] => {
+  const q = (query ?? '').trim().toLowerCase();
+  if (!q) return lista;
+
+  return lista.filter(p => {
+    const nombre = (p.nombre ?? '').toLowerCase();
+    const cantidad = String(p.cantidad ?? '');
+    const id = String(p.id ?? '');
+    return nombre.includes(q) || cantidad.includes(q) || id.includes(q);
+  });
+};
+
+// Componente del modal
 type Props = {
   visible: boolean;
   isEditing: boolean;
-  codigo: string;                 // ID escaneado
+  codigo: string;
   nombre: string;
   cantidad: string;
   onChangeNombre: (v: string) => void;
   onChangeCantidad: (v: string) => void;
-  onConfirm: () => void;          // agregar/actualizar (lo maneja el padre)
-  onCancel: () => void;           // cerrar/resetear (lo maneja el padre)
+  onConfirm: () => void;
+  onCancel: () => void;
 };
 
 export default function ProductItem({
