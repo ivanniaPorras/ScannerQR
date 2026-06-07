@@ -1,51 +1,87 @@
-# Welcome to your Expo app 👋
+# Scanner Móviles
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Aplicación móvil de **inventario por escaneo de códigos** construida con **React Native + Expo** (TypeScript). Usa la cámara del dispositivo para escanear códigos de barras y QR, y con ellos crear y gestionar una lista de productos que se guarda localmente. Cada producto se identifica por el código escaneado, junto a su nombre y cantidad.
 
-## Get started
+## Características
 
-1. Install dependencies
+- **Escaneo con la cámara** de códigos QR, EAN-13 y EAN-8 mediante `expo-camera`.
+- **Gestión de permisos de cámara**: la app solicita el permiso al usuario antes de activar el escáner.
+- **Registro de productos**: al escanear un código se abre un modal para ingresar el nombre y la cantidad del producto.
+- **CRUD completo**: crear, editar y eliminar productos. Si se escanea un código ya existente, se actualiza el producto en lugar de duplicarlo.
+- **Buscador** que filtra productos por nombre, ID (código) o cantidad en tiempo real.
+- **Ordenamiento** de la lista por fecha de registro (más recientes primero).
+- **Persistencia local** con AsyncStorage: los productos se conservan entre sesiones sin necesidad de conexión ni backend.
+- **Validaciones**: campos obligatorios y cantidad numérica válida.
 
+## Tecnologías
+
+- **Framework:** React Native 0.81 con Expo (~54) y **TypeScript**
+- **Enrutamiento:** Expo Router (rutas basadas en archivos)
+- **Cámara y escaneo:** `expo-camera` y `expo-barcode-scanner`
+- **Almacenamiento local:** AsyncStorage
+- **Plataformas:** Android, iOS y Web
+
+## Estructura del proyecto
+
+```
+scanner_moviles/
+├── app/
+│   ├── _layout.tsx          # Layout raíz (Stack de Expo Router)
+│   └── index.tsx            # Pantalla principal: escáner, lista y acciones
+├── components/
+│   └── ProductItem.tsx      # Modal de alta/edición y función de filtrado
+├── utils/
+│   └── storage.ts           # Tipo Producto y persistencia con AsyncStorage
+├── assets/images/           # Íconos e imágenes de la app
+├── app.json                 # Configuración de Expo y plugins
+└── package.json
+```
+
+### Modelo de datos
+Cada **producto** se representa así:
+
+```ts
+type Producto = {
+  id: string;        // Código escaneado (identificador único)
+  nombre: string;    // Nombre del producto
+  cantidad: number;  // Cantidad en inventario
+  fecha?: string;    // Fecha de registro (ISO)
+};
+```
+
+La lista completa se guarda en AsyncStorage bajo la clave `@scanlist:productos:v1`.
+
+## Instalación y ejecución
+
+1. Clonar el repositorio:
+   ```bash
+   git clone https://github.com/ivanniaPorras/scanner_moviles.git
+   cd scanner_moviles
+   ```
+2. Instalar las dependencias:
    ```bash
    npm install
    ```
-
-2. Start the app
-
+3. Iniciar el proyecto con Expo:
    ```bash
-   npx expo start
+   npm start
+   ```
+4. Ejecutar en la plataforma deseada:
+   ```bash
+   npm run android   # Android
+   npm run ios       # iOS
+   npm run web       # Web
    ```
 
-In the output, you'll find options to open the app in a
+Para probar el escaneo es necesario un **dispositivo físico** con cámara (por ejemplo mediante la app **Expo Go**), ya que los emuladores no disponen de una cámara real.
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## Cómo se usa
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+1. Concede el permiso de cámara cuando la app lo solicite.
+2. Apunta la cámara a un código de barras o QR.
+3. En el modal, ingresa el nombre y la cantidad y confirma para guardarlo.
+4. Usa el buscador para encontrar productos, o los botones **Editar** y **Eliminar** de cada tarjeta para gestionarlos.
 
-## Get a fresh project
+## Autoría
 
-When you're ready, run:
-
-```bash
-npm run reset-project
-```
-
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
-# scanner_moviles
+Proyecto desarrollado por [ivanniaPorras](https://github.com/ivanniaPorras).
